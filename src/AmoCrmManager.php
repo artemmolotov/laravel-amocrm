@@ -14,7 +14,11 @@ namespace Dotzero\LaravelAmoCrm;
 use AmoCRM\Client;
 use AmoCRM\Helpers\Fields;
 use AmoCRM\Helpers\B2BFamily;
+use AmoCRM\OAuth\BasicFilePersistenceHandler;
+use AmoCRM\OAuth2\Client\Provider\AmoCRM;
 use Illuminate\Contracts\Config\Repository;
+use League\OAuth2\Client\Grant\AuthorizationCode;
+use League\OAuth2\Client\Token\AccessToken;
 
 /**
  * This is the AmoCrm manager class.
@@ -86,10 +90,32 @@ class AmoCrmManager
     public function getClient()
     {
         if (!$this->client instanceof Client) {
+            $persistanceHandler = new BasicFilePersistenceHandler($this->config->get('amocrm.tokensFilePath'));
+
+            $state = $this->config->get('amocrm.state');
+
+            if (!$persistanceHandler->hasToken($state)) {
+                $provider = new AmoCRM([
+                    'clientId' => $this->config->get('amocrm.clientId'),
+                    'clientSecret' => $this->config->get('amocrm.clientSecret'),
+                    'redirectUri' => $this->config->get('amocrm.redirectUri'),
+                    'baseDomain' => $this->config->get('amocrm.domain'),
+                ]);
+
+                $accessToken = $provider->getAccessToken(new AuthorizationCode(), [
+                    'code' => $this->config->get('amocrm.clientAuthorizationCode')
+                ]);
+
+                $persistanceHandler->saveToken($state, $accessToken);
+            }
+
             $this->client = new Client(
-                $this->config->get('amocrm.domain'),
-                $this->config->get('amocrm.login'),
-                $this->config->get('amocrm.hash')
+                $state,
+                $this->config->get('amocrm.clientId'),
+                $this->config->get('amocrm.clientSecret'),
+                $this->config->get('amocrm.redirectUri'),
+                $persistanceHandler,
+                $this->config->get('amocrm.domain')
             );
         }
 
